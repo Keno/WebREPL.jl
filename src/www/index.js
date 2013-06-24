@@ -38,7 +38,7 @@ $(document).ready(function() {
         $.ajax("/session/new",{
             complete: callback,
             type: "POST",
-            data: $("form#session_form").serialize()});
+            data: $.toJSON($("form#session_form").serializeArray())});
         return false;
     });
 

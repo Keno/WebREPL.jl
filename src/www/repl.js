@@ -378,18 +378,34 @@ var message_handlers = [];
 
 message_handlers[MSG_OUTPUT_NULL] = function(msg) {}; // do nothing
 
+var clientSocket;
+
 message_handlers[MSG_OUTPUT_READY] = function(msg) {
-    // remove the initializing message
-    $("#terminal").html("");
+    // connect to worker
+    clientSocket = new WebSocket(msg[0], "julia-repl");
 
-    // enable input
-    $("#prompt").show();
-    $("#terminal-input").removeAttr("disabled");
-    $("#terminal-input").show();
-    $("#terminal-input").focus();
+    clientSocket.onopen = function() {
 
-    // reset the size of the input box
-    set_input_width();
+        // remove the initializing message
+        $("#terminal").html("");
+
+        // enable input
+        $("#prompt").show();
+        $("#terminal-input").removeAttr("disabled");
+        $("#terminal-input").show();
+        $("#terminal-input").focus();
+
+        // reset the size of the input box
+        set_input_width();  
+    }
+
+
+    clientSocket.onmessage = function(evt){
+        var msg = $.parseJSON(evt.data),
+        type = msg[0], msg = msg.slice(1);
+        var f = message_handlers[type];
+        f(msg);
+    }
 };
 
 message_handlers[MSG_OUTPUT_MESSAGE] = function(msg) {
@@ -498,203 +514,6 @@ message_handlers[MSG_OUTPUT_GET_USER] = function(msg) {
     apply_color_scheme();
 }
 
-var plotters = {};
-
-plotters["line"] = function(plot) {
-    // local variables
-    var xpad = 0,
-        ypad = (plot.y_max-plot.y_min)*0.1,
-        x = d3.scale.linear().domain([plot.x_min - xpad, plot.x_max + xpad]).range([0, plot.w]),
-        y = d3.scale.linear().domain([plot.y_min - ypad, plot.y_max + ypad]).range([plot.h, 0]),
-        xticks = x.ticks(8),
-        yticks = y.ticks(8);
-
-    // create an SVG canvas and a group to represent the plot area
-    var vis = d3.select("#terminal")
-      .append("svg")
-        .data([d3.zip(plot.x_data, plot.y_data)]) // coordinate pairs
-        .attr("width", plot.w+plot.p*2)
-        .attr("height", plot.h+plot.p*2)
-      .append("g")
-        .attr("transform", "translate("+String(plot.p)+","+String(plot.p)+")");
-
-    // vertical tics
-    var vrules = vis.selectAll("g.vrule")
-        .data(xticks)
-      .enter().append("g")
-        .attr("class", "vrule");
-
-    // horizontal tics
-    var hrules = vis.selectAll("g.hrule")
-        .data(yticks)
-      .enter().append("g")
-        .attr("class", "hrule");
-
-    // vertical lines
-    vrules.filter(function(d) { return (d != 0); }).append("line")
-        .attr("x1", x)
-        .attr("x2", x)
-        .attr("y1", 0)
-        .attr("y2", plot.h - 1);
-
-    // horizontal lines
-    hrules.filter(function(d) { return (d != 0); }).append("line")
-        .attr("y1", y)
-        .attr("y2", y)
-        .attr("x1", 0)
-        .attr("x2", plot.w + 1);
-
-    // x-axis labels
-    vrules.append("text")
-        .attr("x", x)
-        .attr("y", plot.h + 10)
-        .attr("dy", ".71em")
-        .attr("text-anchor", "middle")
-        .text(x.tickFormat(10));
-
-    // y-axis labels
-    hrules.append("text")
-        .attr("y", y)
-        .attr("x", -5)
-        .attr("dy", ".35em")
-        .attr("text-anchor", "end")
-        .text(y.tickFormat(10));
-
-    // y-axis
-    var vrules2 = vis.selectAll("g.vrule2")
-        .data(xticks)
-      .enter().append("g")
-        .attr("class", "vrule2");
-
-    // x-axis
-    var hrules2 = vis.selectAll("g.hrule2")
-        .data(yticks)
-      .enter().append("g")
-        .attr("class", "hrule2");
-
-    // y-axis line
-    vrules2.filter(function(d) { return (d == 0); }).append("line")
-        .attr("x1", x)
-        .attr("x2", x)
-        .attr("y1", 0)
-        .attr("y2", plot.h - 1);
-
-    // x-axis line
-    hrules2.filter(function(d) { return (d == 0); }).append("line")
-        .attr("y1", y)
-        .attr("y2", y)
-        .attr("x1", 0)
-        .attr("x2", plot.w + 1);
-
-    // actual plot curve
-    vis.append("path")
-        .attr("class", "line")
-        .attr("d", d3.svg.line()
-        .x(function(d) { return x(d[0]); })
-        .y(function(d) { return y(d[1]); }));
-
-    // newline
-    add_to_terminal("<br />");
-
-    // scroll to the new plot
-    $("#terminal-form").prop("scrollTop", $("#terminal-form").prop("scrollHeight"));
-};
-
-plotters["bar"] = function(plot) {
-    var data = d3.zip(plot.x_data, plot.y_data); // coordinate pairs
-
-    // local variables
-    var x = d3.scale.linear().domain(d3.extent(plot.x_data)).range([0, plot.w]),
-        y = d3.scale.linear().domain([0, d3.max(plot.y_data)]).range([0, plot.h]),
-        xticks = x.ticks(8),
-        yticks = y.ticks(8);
-
-    // create an SVG canvas and a group to represent the plot area
-    var vis = d3.select("#terminal")
-      .append("svg")
-        .data([data])
-        .attr("width", plot.w+plot.p*2)
-        .attr("height", plot.h+plot.p*2)
-      .append("g")
-        .attr("transform", "translate("+String(plot.p)+","+String(plot.p)+")");
-
-    // horizontal ticks
-    var hrules = vis.selectAll("g.hrule")
-        .data(yticks)
-      .enter().append("g")
-        .attr("class", "hrule")
-        .attr("transform", function(d) { return "translate(0," + (plot.h-y(d)) + ")"; });
-
-    // horizontal lines
-    hrules.append("line")
-        .attr("x1", 0)
-        .attr("x2", plot.w);
-
-    // y-axis labels
-    hrules.append("text")
-        .attr("x", -5)
-        .attr("dy", ".35em")
-        .attr("text-anchor", "end")
-        .text(y.tickFormat(10));
-
-    // x-axis rules container
-    var vrules = vis.selectAll("g.vrule")
-        .data(xticks)
-        .enter().append("g")
-        .attr("class", "vrule")
-        .attr("transform", function(d) { return "translate(" + (x(d)) + ",0)"; });
-
-    // x-axis labels
-    vrules.append("text")
-        .attr("y", plot.h + 20)
-        .attr("dx", "0")
-        .attr("text-anchor", "middle")
-        .text(x.tickFormat(10));
-
-    // Redfining domain/range to fit the bars within the width
-    x.domain([0, 1]).range([0, plot.w/data.length]);
-
-    // actual plot curve
-    vis.selectAll("rect")
-        .data(data)
-        .enter().append("rect")
-        .attr("class", "rect")
-        .attr("x", function(d, i) { return x(i); })
-        .attr("y", function(d) { return plot.h - y(d[1]); })
-        .attr("width", (plot.w - plot.p*2) / data.length)
-        .attr("height", function(d) { return y(d[1]); });
-
-    // newline
-    add_to_terminal("<br />");
-
-    // scroll to the new plot
-    $("#terminal-form").prop("scrollTop", $("#terminal-form").prop("scrollHeight"));
-};
-
-message_handlers[MSG_OUTPUT_PLOT] = function(msg) {
-    var plottype = msg[0],
-        plot = {
-            "x_data": eval(msg[1]),
-            "y_data": eval(msg[2]),
-            "x_min": eval(msg[3]),
-            "x_max": eval(msg[4]),
-            "y_min": eval(msg[5]),
-            "y_max": eval(msg[6])
-        },
-        plotter = plotters[plottype];
-
-    // TODO:
-    // * calculate dynamically based on window size
-    // * update above calculation with window resize
-    // * allow user to resize
-    plot.w = 450;
-    plot.h = 275;
-    plot.p = 40;
-
-    if (typeof plotter == "function")
-        plotter(plot);
-};
-
 // called on page load
 $(document).ready(function() {
     // apply the autoresize plugin to the textarea
@@ -791,8 +610,7 @@ $(document).ready(function() {
                     // get the input
                     var input = $("#terminal-input").val();
 
-                    // send the input to the server via AJAX
-                    send_msg([MSG_INPUT_EVAL, user_name, user_id, input]);
+                    send_worker_msg([MSG_INPUT_EVAL, user_name, user_id, input]);
                 }
 
                 // prevent the form from actually submitting
@@ -836,6 +654,10 @@ ws.onmessage = function(evt){
 
 function send_msg(msg) {
     ws.send($.toJSON(msg))
+}
+
+function send_worker_msg(msg) {
+    clientSocket.send($.toJSON(msg))
 }
 
 // Initial Request
